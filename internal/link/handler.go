@@ -1,8 +1,10 @@
 package link
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
+	"urlshortener/configs"
 	"urlshortener/pkg/middleware"
 	"urlshortener/pkg/request"
 	"urlshortener/pkg/response"
@@ -12,6 +14,7 @@ import (
 
 type LinkHandlerDeps struct {
 	LinkRepository *LinkRepository
+	Config         *configs.Config
 }
 
 type LinkHandler struct {
@@ -23,9 +26,9 @@ func NewLinkHandler(router *http.ServeMux, deps LinkHandlerDeps) {
 		LinkRepository: deps.LinkRepository,
 	}
 
-	router.HandleFunc("POST /link", handler.Create())
-	router.Handle("PATCH /link/{id}", middleware.IsAuthed(handler.Update()))
-	router.HandleFunc("DELETE /link/{id}", handler.Delete())
+	router.Handle("POST /link", middleware.IsAuthed(handler.Create(), deps.Config))
+	router.Handle("PATCH /link/{id}", middleware.IsAuthed(handler.Update(), deps.Config))
+	router.Handle("DELETE /link/{id}", middleware.IsAuthed(handler.Delete(), deps.Config))
 	router.HandleFunc("GET /{hash}", handler.GoTo())
 
 }
@@ -57,6 +60,13 @@ func (handler *LinkHandler) Create() http.HandlerFunc {
 
 func (handler *LinkHandler) Update() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
+		email, ok := r.Context().Value(middleware.ContextEmailKey).(string)
+
+		if ok {
+			fmt.Println(email)
+		}
+
 		body, err := request.HandleBody[LinkUpdateRequest](&w, r)
 		if err != nil {
 			return
