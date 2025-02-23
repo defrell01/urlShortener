@@ -1,23 +1,27 @@
 package auth
 
 import (
-	"fmt"
 	"net/http"
 	"urlshortener/configs"
+	"urlshortener/pkg/jwt"
 	"urlshortener/pkg/request"
+	"urlshortener/pkg/response"
 )
 
 type AuthHandlerDeps struct {
 	*configs.Config
+	*AuthService
 }
 
 type AuthHandler struct {
 	*configs.Config
+	*AuthService
 }
 
 func NewAuthHandler(router *http.ServeMux, deps AuthHandlerDeps) {
 	handler := &AuthHandler{
-		Config: deps.Config,
+		Config:      deps.Config,
+		AuthService: deps.AuthService,
 	}
 
 	router.HandleFunc("POST /auth/login", handler.Login())
@@ -25,23 +29,57 @@ func NewAuthHandler(router *http.ServeMux, deps AuthHandlerDeps) {
 }
 
 func (handler *AuthHandler) Login() http.HandlerFunc {
-	return func(w http.ResponseWriter, req *http.Request) {
-		body, err := request.HandleBody[LoginRequest](&w, req)
+	return func(w http.ResponseWriter, r *http.Request) {
+		body, err := request.HandleBody[LoginRequest](&w, r)
 		if err != nil {
 			return
 		}
 
-		fmt.Println(body)
+		email, err := handler.AuthService.Login(body.Email, body.Password)
+
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+		}
+
+		jwt := jwt.NewJWT(handler.Config.Auth.Secret)
+
+		token, err := jwt.Create(email)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		data := LoginResponse{
+			Token: token,
+		}
+		response.Json(w, data, http.StatusOK)
 	}
 }
 
 func (handler *AuthHandler) Register() http.HandlerFunc {
-	return func(w http.ResponseWriter, req *http.Request) {
-		body, err := request.HandleBody[RegisterRequest](&w, req)
+	return func(w http.ResponseWriter, r *http.Request) {
+		body, err := request.HandleBody[RegisterRequest](&w, r)
 		if err != nil {
 			return
 		}
 
-		fmt.Println(body)
+		_, err = handler.AuthService.Register(body.Email, body.Password, body.Name)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		jwt := jwt.NewJWT(handler.Config.Auth.Secret)
+
+		token, err := jwt.Create(body.Email)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		data := LoginResponse{
+			Token: token,
+		}
+		response.Json(w, data, http.StatusOK)
 	}
 }
