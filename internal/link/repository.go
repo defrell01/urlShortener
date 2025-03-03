@@ -1,6 +1,7 @@
 package link
 
 import (
+	"fmt"
 	"urlshortener/pkg/db"
 
 	"gorm.io/gorm/clause"
@@ -60,4 +61,34 @@ func (repo *LinkRepository) Delete(id uint) error {
 	}
 
 	return nil
+}
+
+func (repo *LinkRepository) Count() int64 {
+	var count int64
+
+	repo.Database.
+		Table("links").
+		Where("deleted_at is null").
+		Count(&count)
+
+	return count
+}
+
+func (repo *LinkRepository) GetLinks(limit, offset int) []Link {
+	var links []Link
+
+	fmt.Printf("limit %d\n", limit)
+	fmt.Printf("offset %d\n", offset)
+
+	repo.Database.
+		Table("links").
+		Where("deleted_at is null").
+		Order("id asc").
+		Limit(limit).
+		Offset(offset).
+		Scan(&links)
+
+	fmt.Println(links)
+
+	return links
 }
