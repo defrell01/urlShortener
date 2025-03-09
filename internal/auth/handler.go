@@ -38,7 +38,8 @@ func (handler *AuthHandler) Login() http.HandlerFunc {
 		email, err := handler.AuthService.Login(body.Email, body.Password)
 
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
+			http.Error(w, err.Error(), http.StatusUnauthorized)
+			return
 		}
 
 		j := jwt.NewJWT(handler.Config.Auth.Secret)
@@ -79,6 +80,6 @@ func (handler *AuthHandler) Register() http.HandlerFunc {
 		data := LoginResponse{
 			Token: token,
 		}
-		response.Json(w, data, http.StatusOK)
+		response.Json(w, data, http.StatusCreated)
 	}
 }
