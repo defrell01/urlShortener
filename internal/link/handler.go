@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"urlshortener/configs"
+	"urlshortener/pkg/db"
 	event "urlshortener/pkg/eventbus"
 	"urlshortener/pkg/middleware"
 	"urlshortener/pkg/request"
@@ -15,19 +16,25 @@ import (
 
 type LinkHandlerDeps struct {
 	LinkRepository *LinkRepository
+	RedisClient    *db.Redis
 	Config         *configs.Config
 	EventBus       *event.EventBus
+	CacheEventBus  *event.CacheEventBus
 }
 
 type LinkHandler struct {
 	LinkRepository *LinkRepository
+	RedisClient    *db.Redis
 	EventBus       *event.EventBus
+	CacheEventBus  *event.CacheEventBus
 }
 
 func NewLinkHandler(router *http.ServeMux, deps LinkHandlerDeps) {
 	handler := &LinkHandler{
 		LinkRepository: deps.LinkRepository,
 		EventBus:       deps.EventBus,
+		CacheEventBus:  deps.CacheEventBus,
+		RedisClient:    deps.RedisClient,
 	}
 
 	router.Handle("POST /link", middleware.IsAuthed(handler.Create(), deps.Config))
@@ -100,6 +107,13 @@ func (handler *LinkHandler) Update() http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		go handler.CacheEventBus.Publis(
+			event.CacheEvent{
+				Type:  event.CacheEventUpdateCache,
+				Short: link.Hash,
+				Long:  link.Url,
+			},
+		)
 		response.Json(w, link, http.StatusCreated)
 
 	}
@@ -113,8 +127,7 @@ func (handler *LinkHandler) Delete() http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-
-		_, err = handler.LinkRepository.GetById(uint(id))
+		link, err := handler.LinkRepository.GetById(uint(id))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
@@ -124,6 +137,12 @@ func (handler *LinkHandler) Delete() http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		go handler.CacheEventBus.Publis(event.CacheEvent{
+			Type:  event.CacheEventDeleteCache,
+			Short: link.Hash,
+			Long:  link.Url,
+		},
+		)
 		response.Json(w, nil, http.StatusOK)
 	}
 }
@@ -136,9 +155,22 @@ func (handler *LinkHandler) GoTo() http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
+
+		url, err := handler.RedisClient.GetCache(hash)
+		if err == nil && url != "" {
+			fmt.Printf("Redirecting to cached URL: %s\n", url)
+			http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+			return
+		}
+
 		go handler.EventBus.Publis(event.Event{
 			Type: event.EventLinkVisited,
 			Data: link.ID,
+		})
+		go handler.CacheEventBus.Publis(event.CacheEvent{
+			Type:  event.CacheEventAddCache,
+			Short: hash,
+			Long:  link.Url,
 		})
 		http.Redirect(w, r, link.Url, http.StatusTemporaryRedirect)
 	}

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"urlshortener/configs"
 	"urlshortener/internal/auth"
+	"urlshortener/internal/cache"
 	"urlshortener/internal/link"
 	"urlshortener/internal/stat"
 	"urlshortener/internal/user"
@@ -16,8 +17,10 @@ import (
 func App() http.Handler {
 	conf := configs.LoadConfig()
 	database := db.NewDb(conf)
+	redisClient := db.NewRedisClient(conf)
 	router := http.NewServeMux()
 	eventBus := event.NewEventBus()
+	cacheEventBust := event.NewCacheEventBus()
 
 	/// repositoryies
 	linkRepository := link.NewLinkRepository(database)
@@ -30,13 +33,18 @@ func App() http.Handler {
 		EventBus:       eventBus,
 		StatRepository: statRepository,
 	})
+	cacheService := cache.NewCacheService(&cache.CacheServiceDeps{
+		EventBus:    cacheEventBust,
+		RedisClient: redisClient,
+	})
 
 	/// handler
 	auth.NewAuthHandler(router, auth.AuthHandlerDeps{Config: conf, AuthService: authService})
-	link.NewLinkHandler(router, link.LinkHandlerDeps{LinkRepository: linkRepository, EventBus: eventBus, Config: conf})
+	link.NewLinkHandler(router, link.LinkHandlerDeps{LinkRepository: linkRepository, EventBus: eventBus, Config: conf, CacheEventBus: cacheEventBust, RedisClient: redisClient})
 	stat.NewStatHandler(router, stat.StatHandlerDeps{StatRepository: statRepository, Config: conf})
 
 	go statService.AddClick()
+	go cacheService.UpdateCache()
 
 	// middlewares
 	stack := middleware.Chain(
