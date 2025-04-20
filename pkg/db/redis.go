@@ -20,9 +20,14 @@ type Redis struct {
 
 func NewRedisClient(conf *configs.Config) *Redis {
 	redisClient := redis.NewClient(&redis.Options{
-		Addr:     conf.Redis.Addr,
-		Password: conf.Redis.Password,
-		DB:       int(conf.Redis.DB),
+		Addr:         conf.Redis.Addr,
+		Password:     conf.Redis.Password,
+		DB:           int(conf.Redis.DB),
+		PoolSize:     10, // Максимальное количество подключений
+		MaxRetries:   3,  // Количество повторов при сбое
+		DialTimeout:  5 * time.Second,
+		ReadTimeout:  3 * time.Second,
+		WriteTimeout: 3 * time.Second,
 	})
 
 	ctx := context.Background()

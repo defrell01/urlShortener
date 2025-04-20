@@ -150,16 +150,15 @@ func (handler *LinkHandler) Delete() http.HandlerFunc {
 func (handler *LinkHandler) GoTo() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hash := r.PathValue("hash")
-		link, err := handler.LinkRepository.GetByHash(hash)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
+		url, err := handler.RedisClient.GetCache(hash)
+		if err == nil && url != "" {
+			http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 			return
 		}
 
-		url, err := handler.RedisClient.GetCache(hash)
-		if err == nil && url != "" {
-			fmt.Printf("Redirecting to cached URL: %s\n", url)
-			http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+		link, err := handler.LinkRepository.GetByHash(hash)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
 
@@ -167,6 +166,7 @@ func (handler *LinkHandler) GoTo() http.HandlerFunc {
 			Type: event.EventLinkVisited,
 			Data: link.ID,
 		})
+
 		go handler.CacheEventBus.Publis(event.CacheEvent{
 			Type:  event.CacheEventAddCache,
 			Short: hash,
